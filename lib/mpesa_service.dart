@@ -129,4 +129,80 @@ class MpesaService {
       };
     }
   }
+  // Pay to Paybill (for KPLC, Water, etc)
+static Future<Map<String, dynamic>> payBill({
+  required String phoneNumber,
+  required double amount,
+  required String paybillNumber,
+  required String accountNumber,
+  String transactionDesc = 'Bill Payment',
+}) async {
+  try {
+    final accessToken = await getAccessToken();
+    if (accessToken == null) {
+      return {'success': false, 'message': 'Failed to authenticate'};
+    }
+
+    String formattedPhone = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = '254${formattedPhone.substring(1)}';
+    }
+    if (!formattedPhone.startsWith('254')) {
+      formattedPhone = '254$formattedPhone';
+    }
+
+    final timestamp = DateTime.now().toString().replaceAll(RegExp(r'[^0-9]'), '').substring(0, 14);
+    final password = base64Encode(utf8.encode('$shortcode$passkey$timestamp'));
+
+    final requestBody = {
+      'BusinessShortCode': shortcode,
+      'Password': password,
+      'Timestamp': timestamp,
+      'TransactionType': 'CustomerPayBillOnline',
+      'Amount': amount.toInt().toString(),
+      'PartyA': formattedPhone,
+      'PartyB': paybillNumber,
+      'PhoneNumber': formattedPhone,
+      'CallBackURL': 'https://mydomain.com/callback',
+      'AccountReference': accountNumber,
+      'TransactionDesc': transactionDesc,
+    };
+
+    final response = await http.post(
+      Uri.parse(stkPushUrl),
+      headers: {
+        'Authorization': 'Bearer $accessToken',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode(requestBody),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data['ResponseCode'] == '0') {
+        return {'success': true, 'message': 'Payment sent! Check your phone.'};
+      } else {
+        return {'success': false, 'message': data['ResponseDescription'] ?? 'Payment failed'};
+      }
+    } else {
+      return {'success': false, 'message': 'Failed to send payment'};
+    }
+  } catch (e) {
+    return {'success': false, 'message': 'Error: $e'};
+  }
+}
+
+// Buy Airtime
+static Future<Map<String, dynamic>> buyAirtime({
+  required String phoneNumber,
+  required double amount,
+}) async {
+  // For airtime, we use the same STK push but with different description
+  return await stkPush(
+    phoneNumber: phoneNumber,
+    amount: amount,
+    accountReference: 'Airtime',
+    transactionDesc: 'Airtime Purchase',
+  );
+}
 }

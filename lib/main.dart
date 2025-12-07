@@ -1,5 +1,6 @@
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'mpesa_service.dart';
+import 'bills_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -256,6 +257,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: Text('Budget Manager', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
                   centerTitle: false,
                 ),
+                actions: [
+                  IconButton(
+                    icon: Icon(Icons.receipt_long, color: Colors.black87),
+                    tooltip: 'Pay Bills',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => BillsScreen()),
+                      );
+                    },
+                  ),
+                ],
               ),
               SliverToBoxAdapter(
                 child: Padding(
