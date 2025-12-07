@@ -1,8 +1,12 @@
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'mpesa_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  MobileAds.instance.initialize();
   runApp(BudgetManagerApp());
 }
 
@@ -68,11 +72,14 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   double walletBalance = 0;
   List<Category> categories = [];
+  BannerAd? _bannerAd;
+  bool _isAdLoaded = false;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _loadAd();
   }
 
   Future<void> _loadData() async {
@@ -96,6 +103,30 @@ class _HomeScreenState extends State<HomeScreen> {
         ];
       }
     });
+  }
+
+  void _loadAd() {
+    _bannerAd = BannerAd(
+      adUnitId: 'ca-app-pub-5859605644313067/5532736116',
+      size: AdSize.banner,
+      request: AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          setState(() {
+            _isAdLoaded = true;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+        },
+      ),
+    )..load();
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    super.dispose();
   }
 
   Future<void> _saveData() async {
@@ -370,6 +401,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+      bottomNavigationBar: _isAdLoaded && _bannerAd != null
+          ? Container(
+              height: 60,
+              child: AdWidget(ad: _bannerAd!),
+            )
+          : null,
     );
   }
 }
@@ -388,14 +425,25 @@ class _CategoryScreenState extends State<CategoryScreen> {
   void _makePayment() {
     final amountController = TextEditingController();
     final descController = TextEditingController();
+    final phoneController = TextEditingController();
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Make Payment'),
+        title: Text('Make M-Pesa Payment'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            TextField(
+              controller: phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: InputDecoration(
+                labelText: 'M-Pesa Phone Number',
+                hintText: '0712345678',
+                prefixText: '+254 ',
+              ),
+            ),
+            SizedBox(height: 8),
             TextField(
               controller: amountController,
               keyboardType: TextInputType.number,
@@ -414,26 +462,67 @@ class _CategoryScreenState extends State<CategoryScreen> {
             child: Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               final amount = double.tryParse(amountController.text);
-              if (amount != null && amount > 0) {
+              final phone = phoneController.text.trim();
+              
+              if (amount != null && amount > 0 && phone.isNotEmpty) {
                 if (amount <= widget.category.remaining) {
-                  setState(() {
-                    widget.category.spent += amount;
-                  });
-                  widget.onUpdate();
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Payment successful! KES ${amount.toStringAsFixed(2)}'), backgroundColor: Colors.green),
+                  
+                  // Show loading
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => Center(child: CircularProgressIndicator()),
                   );
+                  
+                  // Call M-Pesa STK Push
+                  final result = await MpesaService.stkPush(
+                    phoneNumber: phone,
+                    amount: amount,
+                    accountReference: widget.category.name,
+                    transactionDesc: descController.text.isEmpty ? 'Payment' : descController.text,
+                  );
+                  
+                  Navigator.pop(context); // Close loading
+                  
+                  if (result['success']) {
+                    // Payment initiated successfully
+                    setState(() {
+                      widget.category.spent += amount;
+                    });
+                    widget.onUpdate();
+                    
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result['message']),
+                        backgroundColor: Colors.green,
+                        duration: Duration(seconds: 5),
+                      ),
+                    );
+                  } else {
+                    // Payment failed
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result['message']),
+                        backgroundColor: Colors.red,
+                        duration: Duration(seconds: 5),
+                      ),
+                    );
+                  }
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Insufficient budget!'), backgroundColor: Colors.red),
                   );
                 }
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Please fill all fields!'), backgroundColor: Colors.red),
+                );
               }
             },
-            child: Text('Pay'),
+            child: Text('Pay with M-Pesa'),
           ),
         ],
       ),
